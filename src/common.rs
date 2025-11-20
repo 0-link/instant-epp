@@ -13,15 +13,18 @@ pub struct NoExtension;
 
 impl<'xml> FromXml<'xml> for NoExtension {
     fn matches(_: instant_xml::Id<'_>, _: Option<instant_xml::Id<'_>>) -> bool {
-        false
+        true
     }
 
     fn deserialize<'cx>(
-        _: &mut Self::Accumulator,
-        _: &'static str,
-        _: &mut instant_xml::Deserializer<'cx, 'xml>,
+        acc: &mut Self::Accumulator,
+        field: &'static str,
+        de: &mut instant_xml::Deserializer<'cx, 'xml>,
     ) -> Result<(), instant_xml::Error> {
-        unreachable!()
+        dbg!(field);
+        de.ignore().ok();
+        *acc = Some(Self);
+        Ok(())
     }
 
     type Accumulator = Option<Self>;
