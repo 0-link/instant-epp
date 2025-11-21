@@ -1,12 +1,13 @@
 //! DNS security extensions mapping
 //!
 //! As described in [RFC 5910](https://www.rfc-editor.org/rfc/rfc5910)
-use instant_xml::{Error, Id, Serializer, ToXml};
+use instant_xml::{Error, FromXml, Id, Serializer, ToXml};
 use std::borrow::Cow;
 use std::fmt::Write;
 use std::time::Duration;
 
 use crate::common::NoExtension;
+use crate::domain::DomainUpdate;
 use crate::request::{Extension, Transaction};
 
 pub const XMLNS: &str = "urn:ietf:params:xml:ns:secDNS-1.1";
@@ -512,4 +513,65 @@ mod tests {
             (&object, &extension),
         );
     }
+}
+
+/// secDNS <update> extension for DS management
+#[derive(Debug, ToXml)]
+#[xml(rename = "update", ns(XMLNS))]
+pub struct UpdateData<'a> {
+    #[xml(rename = "add")]
+    pub add: Option<UpdateAdd<'a>>,
+    #[xml(rename = "rem")]
+    pub rem: Option<UpdateRem<'a>>,
+}
+
+#[derive(Debug, ToXml)]
+#[xml(rename = "add", ns(XMLNS))]
+pub struct UpdateAdd<'a> {
+    #[xml(rename = "dsData")]
+    pub ds_data: &'a [DsDataType<'a>],
+}
+
+#[derive(Debug, ToXml)]
+#[xml(rename = "rem", ns(XMLNS))]
+pub struct UpdateRem<'a> {
+    #[xml(rename = "dsData")]
+    pub ds_data: Option<&'a [DsDataType<'a>]>,
+    /// When `all` is `Some(true)`, all DS records should be removed
+    pub all: Option<bool>,
+}
+
+impl<'a> UpdateData<'a> {
+    pub fn add_ds(ds: &'a [DsDataType<'a>]) -> Self {
+        Self {
+            add: Some(UpdateAdd { ds_data: ds }),
+            rem: None,
+        }
+    }
+
+    pub fn rem_ds(ds: &'a [DsDataType<'a>]) -> Self {
+        Self {
+            add: None,
+            rem: Some(UpdateRem {
+                ds_data: Some(ds),
+                all: None,
+            }),
+        }
+    }
+
+    pub fn rem_all() -> Self {
+        Self {
+            add: None,
+            rem: Some(UpdateRem {
+                ds_data: None,
+                all: Some(true),
+            }),
+        }
+    }
+}
+
+impl<'a> Transaction<UpdateData<'a>> for DomainUpdate<'a> {}
+
+impl Extension for UpdateData<'_> {
+    type Response = NoExtension;
 }
