@@ -58,6 +58,7 @@ pub mod extensions {
     pub mod namestore;
     pub mod rgp;
     pub mod secdns;
+    pub mod fee;
 }
 
 pub use client::EppClient;
