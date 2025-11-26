@@ -1,7 +1,7 @@
 //! DNS security extensions mapping
 //!
 //! As described in [RFC 5910](https://www.rfc-editor.org/rfc/rfc5910)
-use instant_xml::{Error, FromXml, Id, Serializer, ToXml};
+use instant_xml::{Error, Id, Serializer, ToXml};
 use std::borrow::Cow;
 use std::fmt::Write;
 use std::time::Duration;

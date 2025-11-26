@@ -95,6 +95,12 @@ impl<'a> Check<'a> {
                     subphase: None,
                     period: Some(Period::years(1)),
                 },
+                Command {
+                    name: "transfer",
+                    phase: None,
+                    subphase: None,
+                    period: Some(Period::years(1)),
+                },
             ],
         }
     }
