@@ -79,7 +79,7 @@ impl Period {
 
 impl<'a> Check<'a> {
     /// Helper: typical "USD, create+renew 1y" request used with <domain:check>.
-    pub fn simple_1y_create_and_renew(currency: Option<&'a str>) -> Self {
+    pub fn new(currency: Option<&'a str>, period_years: Option<u16>) -> Self {
         Check {
             currency,
             commands: vec![
@@ -87,19 +87,19 @@ impl<'a> Check<'a> {
                     name: "create",
                     phase: None,
                     subphase: None,
-                    period: Some(Period::years(1)),
+                    period: period_years.map(Period::years),
                 },
                 Command {
                     name: "renew",
                     phase: None,
                     subphase: None,
-                    period: Some(Period::years(1)),
+                    period: period_years.map(Period::years),
                 },
                 Command {
                     name: "transfer",
                     phase: None,
                     subphase: None,
-                    period: Some(Period::years(1)),
+                    period: period_years.map(Period::years),
                 },
             ],
         }
