@@ -1,6 +1,6 @@
 use instant_xml::{FromXml, ToXml};
 
-use crate::domain::DomainCheck;
+use crate::domain::{DomainCheck, DomainCreate};
 use crate::request::{Extension, Transaction};
 
 /// RFC 8748 namespace
@@ -202,3 +202,71 @@ pub struct Credit {
     #[xml(direct)]
     pub amount: f64,
 }
+
+//
+// REQUEST SIDE: <extension><fee:create>…</fee:create></extension>
+//
+
+#[derive(Debug, ToXml)]
+#[xml(rename = "create", ns(XMLNS))]
+pub struct Create<'a> {
+    /// Optional global currency, e.g. "USD"
+    #[xml(rename = "currency")]
+    pub currency: Option<&'a str>,
+
+    /// Single <fee:fee> with the expected amount
+    #[xml(rename = "fee")]
+    pub fee: CreateFee<'a>,
+}
+
+/// Request-side <fee:fee> for create.
+/// Shape is the same as in RFC 8748, but request-only.
+#[derive(Debug, ToXml)]
+#[xml(rename = "fee", ns(XMLNS))]
+pub struct CreateFee<'a> {
+    #[xml(attribute)]
+    pub description: Option<&'a str>,
+
+    #[xml(attribute)]
+    pub refundable: Option<bool>,
+
+    #[xml(attribute, rename = "grace-period")]
+    pub grace_period: Option<&'a str>, // ISO 8601 duration
+
+    #[xml(direct)]
+    pub amount: f64,
+}
+
+impl<'a> Create<'a> {
+    /// Helper: "currency + period + price" for premium create.
+    pub fn new(currency: Option<&'a str>, amount: f64) -> Self {
+        Create {
+            currency,
+            fee: CreateFee {
+                description: None,
+                refundable: None,
+                grace_period: None,
+                amount,
+            },
+        }
+    }
+}
+
+#[derive(Debug, FromXml)]
+#[xml(rename = "creData", ns(XMLNS))]
+pub struct CreateData {
+    /// <fee:currency>USD</fee:currency>
+    #[xml(rename = "currency")]
+    pub currency: String,
+
+    /// One or more <fee:fee> elements
+    #[xml(rename = "fee")]
+    pub fees: Vec<Fee>,
+}
+
+impl<'a> Extension for Create<'a> {
+    type Response = CreateData;
+}
+
+// Tie this extension to <domain:create> so (&DomainCreate, &Create) works.
+impl<'a> Transaction<Create<'a>> for DomainCreate<'a> {}
