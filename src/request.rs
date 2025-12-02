@@ -18,7 +18,11 @@ pub trait Command: ToXml + Debug {
 }
 
 pub trait Extension: ToXml + Debug {
+    const DO_SEND: bool = true;
     type Response: FromXmlOwned + Debug;
+    fn do_send(&self) -> bool {
+        Self::DO_SEND
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -44,7 +48,7 @@ impl<'a, E: Extension, D: Transaction<E>> CommandWrapper<'a, D, E> {
     }
 }
 
-impl<D: ToXml, E: ToXml> ToXml for CommandWrapper<'_, D, E> {
+impl<D: ToXml, E: ToXml + Extension> ToXml for CommandWrapper<'_, D, E> {
     fn serialize<W: std::fmt::Write + ?Sized>(
         &self,
         _: Option<instant_xml::Id<'_>>,
@@ -54,7 +58,9 @@ impl<D: ToXml, E: ToXml> ToXml for CommandWrapper<'_, D, E> {
         serializer.end_start()?;
         self.data.serialize(None, serializer)?;
         if let Some(extension) = self.extension {
-            Ext { inner: extension }.serialize(None, serializer)?;
+            if extension.do_send() {
+                Ext { inner: extension }.serialize(None, serializer)?;
+            }
         }
 
         let id_prefix = serializer.write_start("clTRID", EPP_XMLNS)?;
