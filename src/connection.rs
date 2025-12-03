@@ -6,7 +6,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use std::{io, mem, str};
+use std::{io, str};
 
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
@@ -74,7 +74,7 @@ impl<C: Connector> EppConnection<C> {
     }
 
     /// Sends an EPP XML request to the registry and returns the response
-    pub(crate) fn transact<'a>(&'a mut self, command: &str) -> Result<RequestFuture<'a, C>, Error> {
+    pub(crate) fn transact(&'_ mut self, command: &str) -> Result<RequestFuture<'_, C>, Error> {
         let new = RequestState::new(command)?;
 
         // If we have a request currently in flight, finish that first
@@ -100,17 +100,15 @@ impl<C: Connector> EppConnection<C> {
         Ok(())
     }
 
-    fn handle(
-        &mut self,
-        mut state: RequestState,
-        cx: &mut Context<'_>,
-    ) -> Result<Transition, Error> {
-        match &mut state {
+    fn handle(&mut self, state: RequestState, cx: &mut Context<'_>) -> Result<Transition, Error> {
+        match state {
             RequestState::Writing { mut start, buf } => {
                 let wrote = match Pin::new(&mut self.stream).poll_write(cx, &buf[start..]) {
                     Poll::Ready(Ok(wrote)) => wrote,
                     Poll::Ready(Err(err)) => return Err(err.into()),
-                    Poll::Pending => return Ok(Transition::Pending(state)),
+                    Poll::Pending => {
+                        return Ok(Transition::Pending(RequestState::Writing { start, buf }))
+                    }
                 };
 
                 if wrote == 0 {
@@ -130,23 +128,25 @@ impl<C: Connector> EppConnection<C> {
                     buf.len()
                 );
 
-                // Transition to reading the response's frame header once
-                // we've written the entire request
+                // Still writing a request
                 if start < buf.len() {
-                    return Ok(Transition::Next(state));
+                    return Ok(Transition::Next(RequestState::Writing { start, buf }));
                 }
 
+                // Request fully written, start reading frame header
                 Ok(Transition::Next(RequestState::ReadLength {
                     read: 0,
                     buf: vec![0; 256],
                 }))
             }
-            RequestState::ReadLength { mut read, buf } => {
+            RequestState::ReadLength { mut read, mut buf } => {
                 let mut read_buf = ReadBuf::new(&mut buf[read..]);
                 match Pin::new(&mut self.stream).poll_read(cx, &mut read_buf) {
                     Poll::Ready(Ok(())) => {}
                     Poll::Ready(Err(err)) => return Err(err.into()),
-                    Poll::Pending => return Ok(Transition::Pending(state)),
+                    Poll::Pending => {
+                        return Ok(Transition::Pending(RequestState::ReadLength { read, buf }))
+                    }
                 };
 
                 let filled = read_buf.filled();
@@ -158,34 +158,41 @@ impl<C: Connector> EppConnection<C> {
                     .into());
                 }
 
-                // We're looking for the frame header which tells us how long the response will be.
-                // The frame header is a 32-bit (4-byte) big-endian unsigned integer. If we don't
-                // have 4 bytes yet, stay in the `ReadLength` state, otherwise we transition to `Reading`.
-
                 read += filled.len();
+
+                // Not enough bytes for the 4-byte header yet
                 if read < 4 {
-                    return Ok(Transition::Next(state));
+                    return Ok(Transition::Next(RequestState::ReadLength { read, buf }));
                 }
 
-                let expected = u32::from_be_bytes(filled[..4].try_into()?) as usize;
+                // Now we have at least 4 bytes in buf[..4]
+                let expected = u32::from_be_bytes(buf[..4].try_into()?) as usize;
                 debug!("{}: Expected response length: {}", self.registry, expected);
+
                 buf.resize(expected, 0);
+
                 Ok(Transition::Next(RequestState::Reading {
                     read,
-                    buf: mem::take(buf),
+                    buf,
                     expected,
                 }))
             }
             RequestState::Reading {
                 mut read,
-                buf,
+                mut buf,
                 expected,
             } => {
                 let mut read_buf = ReadBuf::new(&mut buf[read..]);
                 match Pin::new(&mut self.stream).poll_read(cx, &mut read_buf) {
                     Poll::Ready(Ok(())) => {}
                     Poll::Ready(Err(err)) => return Err(err.into()),
-                    Poll::Pending => return Ok(Transition::Pending(state)),
+                    Poll::Pending => {
+                        return Ok(Transition::Pending(RequestState::Reading {
+                            read,
+                            buf,
+                            expected,
+                        }))
+                    }
                 }
 
                 let filled = read_buf.filled();
@@ -206,20 +213,20 @@ impl<C: Connector> EppConnection<C> {
                     expected
                 );
 
-                //
-
-                Ok(if read < *expected {
-                    // If we haven't received the entire response yet, stick to the `Reading` state.
-                    Transition::Next(state)
+                Ok(if read < expected {
+                    // Still reading the frame
+                    Transition::Next(RequestState::Reading {
+                        read,
+                        buf,
+                        expected,
+                    })
                 } else if let Some(next) = self.next.take() {
-                    // Otherwise, if we were just pushing through this request because it was already
-                    // in flight when we started a new one, ignore this response and move to the
-                    // next request (the one this `RequestFuture` is actually for).
+                    // Ignore this response, push through to the queued one
                     Transition::Next(next)
                 } else {
-                    // Otherwise, drain off the frame header and convert the rest to a `String`.
+                    // Done: strip frame header and yield XML as String
                     buf.drain(..4);
-                    Transition::Done(String::from_utf8(mem::take(buf))?)
+                    Transition::Done(String::from_utf8(buf)?)
                 })
             }
         }
