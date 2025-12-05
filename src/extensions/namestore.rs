@@ -51,7 +51,6 @@ impl Transaction<NameStore<'_>> for HostInfo<'_> {}
 impl Transaction<NameStore<'_>> for HostUpdate<'_> {}
 
 impl<'a> NameStore<'a> {
-    /// Create a new RGP restore report request
     pub fn new(subproduct: &'a str) -> Self {
         NameStore {
             subproduct: subproduct.into(),
@@ -63,13 +62,35 @@ impl Extension for NameStore<'_> {
     type Response = NameStore<'static>;
 }
 
-#[derive(Debug, FromXml, ToXml)]
+#[derive(Debug, ToXml)]
 /// Type for EPP XML `<namestoreExt>` extension
 #[xml(rename = "namestoreExt", ns(XMLNS))]
 pub struct NameStore<'a> {
     /// The object holding the list of domains to be checked
     #[xml(rename = "subProduct")]
     pub subproduct: Cow<'a, str>,
+}
+
+impl<'xml> FromXml<'xml> for NameStore<'static> {
+    fn matches(_: instant_xml::Id<'_>, _: Option<instant_xml::Id<'_>>) -> bool {
+        true
+    }
+
+    fn deserialize<'cx>(
+        acc: &mut Self::Accumulator,
+        field: &'static str,
+        de: &mut instant_xml::Deserializer<'cx, 'xml>,
+    ) -> Result<(), instant_xml::Error> {
+        dbg!(field);
+        de.ignore().ok();
+        *acc = Some(Self {
+            subproduct: "*".into(),
+        });
+        Ok(())
+    }
+
+    type Accumulator = Option<Self>;
+    const KIND: instant_xml::Kind = instant_xml::Kind::Element;
 }
 
 #[cfg(test)]

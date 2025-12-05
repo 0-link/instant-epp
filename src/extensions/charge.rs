@@ -1,4 +1,4 @@
-use crate::domain::DomainCheck;
+use crate::domain::{DomainCheck, DomainCreate};
 use crate::request::{Extension, Transaction};
 use instant_xml::{Deserializer, Error, FromXml, Id, Kind, ToXml};
 use std::ops::Deref;
@@ -75,7 +75,6 @@ pub struct ChargeAmount {
     pub amount: f64,
 }
 
-
 #[derive(Debug, Clone)]
 pub enum ChargeCommand {
     Create,
@@ -121,3 +120,51 @@ impl<'xml> FromXml<'xml> for ChargeCommand {
     type Accumulator = Option<ChargeCommand>;
     const KIND: Kind = Kind::Scalar;
 }
+
+// -------- CREATE EXTENSION --------
+
+#[derive(Debug, ToXml)]
+#[xml(rename = "create", ns(XMLNS))]
+pub struct Create {
+    #[xml(rename = "set")]
+    pub set: CreateSet,
+}
+
+#[derive(Debug, ToXml)]
+#[xml(rename = "set", ns(XMLNS))]
+pub struct CreateSet {
+    #[xml(rename = "amount")]
+    pub amount: CreateAmount,
+}
+
+#[derive(Debug, ToXml)]
+#[xml(rename = "amount", ns(XMLNS))]
+pub struct CreateAmount {
+    /// `command="create"` etc.
+    #[xml(attribute, rename = "command")]
+    pub command: &'static str,
+
+    /// Numeric amount inside <charge:amount>.
+    #[xml(direct)]
+    pub amount: f64,
+}
+
+impl Create {
+    /// Convenience constructor for a create charge.
+    pub fn new(amount: f64) -> Self {
+        Self {
+            set: CreateSet {
+                amount: CreateAmount {
+                    command: "create",
+                    amount,
+                },
+            },
+        }
+    }
+}
+
+impl Extension for Create {
+    type Response = (); // we don't currently parse a create-specific charge response
+}
+
+impl<'a> Transaction<Create> for DomainCreate<'a> {}

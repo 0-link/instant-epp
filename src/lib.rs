@@ -52,14 +52,15 @@ pub mod xml;
 
 pub mod extensions {
     pub mod change_poll;
+    pub mod charge;
+    pub mod composite;
     pub mod consolidate;
+    pub mod fee;
     pub mod frnic;
     pub mod low_balance;
     pub mod namestore;
     pub mod rgp;
     pub mod secdns;
-    pub mod fee;
-    pub mod charge;
 }
 
 pub use client::EppClient;
