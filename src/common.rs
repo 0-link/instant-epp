@@ -21,7 +21,6 @@ impl<'xml> FromXml<'xml> for NoExtension {
         field: &'static str,
         de: &mut instant_xml::Deserializer<'cx, 'xml>,
     ) -> Result<(), instant_xml::Error> {
-        dbg!(field);
         de.ignore().ok();
         *acc = Some(Self);
         Ok(())
