@@ -1,6 +1,6 @@
 use instant_xml::{FromXml, ToXml};
 
-use crate::domain::{DomainCheck, DomainCreate};
+use crate::domain::{DomainCheck, DomainCreate, DomainRenew};
 use crate::request::{Extension, Transaction};
 
 /// RFC 8748 namespace
@@ -270,3 +270,71 @@ impl<'a> Extension for Create<'a> {
 
 // Tie this extension to <domain:create> so (&DomainCreate, &Create) works.
 impl<'a> Transaction<Create<'a>> for DomainCreate<'a> {}
+
+//
+// REQUEST SIDE: <extension><fee:renew>…</fee:renew></extension>
+//
+
+#[derive(Debug, ToXml)]
+#[xml(rename = "renew", ns(XMLNS))]
+pub struct Renew<'a> {
+    /// Optional global currency, e.g. "USD"
+    #[xml(rename = "currency")]
+    pub currency: Option<&'a str>,
+
+    /// Single <fee:fee> with the expected amount
+    #[xml(rename = "fee")]
+    pub fee: RenewFee<'a>,
+}
+
+/// Request-side <fee:fee> for create.
+/// Shape is the same as in RFC 8748, but request-only.
+#[derive(Debug, ToXml)]
+#[xml(rename = "fee", ns(XMLNS))]
+pub struct RenewFee<'a> {
+    #[xml(attribute)]
+    pub description: Option<&'a str>,
+
+    #[xml(attribute)]
+    pub refundable: Option<bool>,
+
+    #[xml(attribute, rename = "grace-period")]
+    pub grace_period: Option<&'a str>, // ISO 8601 duration
+
+    #[xml(direct)]
+    pub amount: f64,
+}
+
+impl<'a> Renew<'a> {
+    /// Helper: "currency + period + price" for premium create.
+    pub fn new(currency: Option<&'a str>, amount: f64) -> Self {
+        Renew {
+            currency,
+            fee: RenewFee {
+                description: None,
+                refundable: None,
+                grace_period: None,
+                amount,
+            },
+        }
+    }
+}
+
+#[derive(Debug, FromXml)]
+#[xml(rename = "renData", ns(XMLNS))]
+pub struct RenewData {
+    /// <fee:currency>USD</fee:currency>
+    #[xml(rename = "currency")]
+    pub currency: String,
+
+    /// One or more <fee:fee> elements
+    #[xml(rename = "fee")]
+    pub fees: Vec<Fee>,
+}
+
+impl<'a> Extension for Renew<'a> {
+    type Response = RenewData;
+}
+
+// Tie this extension to <domain:renew> so (&DomainRenew, &Renew) works.
+impl<'a> Transaction<Renew<'a>> for DomainRenew<'a> {}

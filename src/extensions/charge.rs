@@ -1,7 +1,8 @@
-use crate::domain::{DomainCheck, DomainCreate};
+use crate::domain::{DomainCheck, DomainCreate, DomainRenew};
 use crate::request::{Extension, Transaction};
 use instant_xml::{Deserializer, Error, FromXml, Id, Kind, ToXml};
 use std::ops::Deref;
+use crate::common::NoExtension;
 
 pub const XMLNS: &str = "http://www.unitedtld.com/epp/charge-1.0";
 
@@ -75,7 +76,7 @@ pub struct ChargeAmount {
     pub amount: f64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChargeCommand {
     Create,
     Renew,
@@ -121,26 +122,44 @@ impl<'xml> FromXml<'xml> for ChargeCommand {
     const KIND: Kind = Kind::Scalar;
 }
 
-// -------- CREATE EXTENSION --------
+// -------- Agreement extension --------
 
 #[derive(Debug, ToXml)]
-#[xml(rename = "create", ns(XMLNS))]
-pub struct Create {
+#[xml(rename = "agreement", ns(XMLNS))]
+pub struct Agreement {
     #[xml(rename = "set")]
-    pub set: CreateSet,
+    pub set: AgreementSet,
 }
 
 #[derive(Debug, ToXml)]
 #[xml(rename = "set", ns(XMLNS))]
-pub struct CreateSet {
+pub struct AgreementSet {
+    #[xml(rename = "category")]
+    pub category: AgreementCategory,
+
+    #[xml(rename = "type")]
+    pub charge_type: String,
+
     #[xml(rename = "amount")]
-    pub amount: CreateAmount,
+    pub amount: AgreementAmount,
+}
+
+#[derive(Debug, ToXml)]
+#[xml(rename = "category", ns(XMLNS))]
+pub struct AgreementCategory {
+    // category code from check response, e.g. "PIR-BBB"
+    #[xml(attribute, rename = "name")]
+    pub name: Option<String>,
+
+    // inner text, e.g. "premium" / "standard"
+    #[xml(direct)]
+    pub value: String,
 }
 
 #[derive(Debug, ToXml)]
 #[xml(rename = "amount", ns(XMLNS))]
-pub struct CreateAmount {
-    /// `command="create"` etc.
+pub struct AgreementAmount {
+    /// `command="create"` / `command="renew"` etc.
     #[xml(attribute, rename = "command")]
     pub command: &'static str,
 
@@ -149,22 +168,50 @@ pub struct CreateAmount {
     pub amount: f64,
 }
 
-impl Create {
-    /// Convenience constructor for a create charge.
-    pub fn new(amount: f64) -> Self {
+impl Agreement {
+    /// Internal constructor to reuse for different commands.
+    fn new_with_command(
+        command: &'static str,
+        category_name: Option<String>,
+        category_value: String, // "premium" / "standard"
+        charge_type: String,    // e.g. "price"
+        amount: f64,
+    ) -> Self {
         Self {
-            set: CreateSet {
-                amount: CreateAmount {
-                    command: "create",
-                    amount,
+            set: AgreementSet {
+                category: AgreementCategory {
+                    name: category_name,
+                    value: category_value,
                 },
+                charge_type,
+                amount: AgreementAmount { command, amount },
             },
         }
     }
+
+    pub fn create(
+        category_name: Option<String>,
+        category_value: String,
+        charge_type: String,
+        amount: f64,
+    ) -> Self {
+        Self::new_with_command("create", category_name, category_value, charge_type, amount)
+    }
+
+    pub fn renew(
+        category_name: Option<String>,
+        category_value: String,
+        charge_type: String,
+        amount: f64,
+    ) -> Self {
+        Self::new_with_command("renew", category_name, category_value, charge_type, amount)
+    }
 }
 
-impl Extension for Create {
-    type Response = (); // we don't currently parse a create-specific charge response
+impl Extension for Agreement {
+    // Ignore the charge extension response
+    type Response = NoExtension;
 }
 
-impl<'a> Transaction<Create> for DomainCreate<'a> {}
+impl<'a> Transaction<Agreement> for DomainCreate<'a> {}
+impl<'a> Transaction<Agreement> for DomainRenew<'a> {}

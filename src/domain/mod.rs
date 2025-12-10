@@ -157,7 +157,7 @@ pub enum Period {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct PeriodLength(u8);
+pub struct PeriodLength(pub u8);
 
 impl PeriodLength {
     pub fn new(length: u8) -> Result<Self, Error> {

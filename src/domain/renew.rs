@@ -33,12 +33,12 @@ impl<'a> DomainRenew<'a> {
 #[xml(rename = "renew", ns(XMLNS))]
 pub struct DomainRenewRequestData<'a> {
     /// The name of the domain to be renewed
-    name: &'a str,
+    pub name: &'a str,
     /// The current expiry date of the domain in 'Y-m-d' format
     #[xml(rename = "curExpDate")]
-    current_expiry_date: NaiveDate,
+    pub current_expiry_date: NaiveDate,
     /// The period of renewal
-    period: Period,
+    pub period: Period,
 }
 
 #[derive(Debug, ToXml)]
@@ -47,7 +47,7 @@ pub struct DomainRenewRequestData<'a> {
 pub struct DomainRenew<'a> {
     /// The data under the `<renew>` tag for the domain renewal
     #[xml(rename = "renew")]
-    domain: DomainRenewRequestData<'a>,
+    pub domain: DomainRenewRequestData<'a>,
 }
 
 // Response
