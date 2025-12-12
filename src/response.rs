@@ -255,7 +255,7 @@ pub struct Response<D, E> {
 #[derive(Debug, Eq, FromXml, PartialEq)]
 #[xml(rename = "resData", ns(EPP_XMLNS))]
 pub struct ResponseData<D> {
-    data: D,
+    pub data: D,
 }
 
 impl<D> ResponseData<D> {
