@@ -1,6 +1,6 @@
 use instant_xml::{FromXml, ToXml};
 
-use crate::domain::{DomainCheck, DomainCreate, DomainRenew};
+use crate::domain::{DomainCheck, DomainCreate, DomainRenew, DomainTransfer};
 use crate::request::{Extension, Transaction};
 
 /// RFC 8748 namespace
@@ -336,5 +336,70 @@ impl<'a> Extension for Renew<'a> {
     type Response = RenewData;
 }
 
-// Tie this extension to <domain:renew> so (&DomainRenew, &Renew) works.
 impl<'a> Transaction<Renew<'a>> for DomainRenew<'a> {}
+
+//
+// REQUEST SIDE: <extension><fee:transfer>…</fee:transfer></extension>
+//
+
+#[derive(Debug, ToXml)]
+#[xml(rename = "transfer", ns(XMLNS))]
+pub struct Transfer<'a> {
+    /// Optional global currency, e.g. "USD"
+    #[xml(rename = "currency")]
+    pub currency: Option<&'a str>,
+
+    /// Single <fee:fee> with the expected amount
+    #[xml(rename = "fee")]
+    pub fee: TransferFee<'a>,
+}
+
+/// Request-side <fee:fee> for transfer.
+/// Shape matches request-side create/renew.
+#[derive(Debug, ToXml)]
+#[xml(rename = "fee", ns(XMLNS))]
+pub struct TransferFee<'a> {
+    #[xml(attribute)]
+    pub description: Option<&'a str>,
+
+    #[xml(attribute)]
+    pub refundable: Option<bool>,
+
+    #[xml(attribute, rename = "grace-period")]
+    pub grace_period: Option<&'a str>,
+
+    #[xml(direct)]
+    pub amount: f64,
+}
+
+impl<'a> Transfer<'a> {
+    pub fn new(currency: Option<&'a str>, amount: f64) -> Self {
+        Transfer {
+            currency,
+            fee: TransferFee {
+                description: None,
+                refundable: None,
+                grace_period: None,
+                amount,
+            },
+        }
+    }
+}
+
+#[derive(Debug, FromXml)]
+#[xml(rename = "trnData", ns(XMLNS))]
+pub struct TransferData {
+    /// <fee:currency>USD</fee:currency>
+    #[xml(rename = "currency")]
+    pub currency: String,
+
+    /// One or more <fee:fee> elements
+    #[xml(rename = "fee")]
+    pub fees: Vec<Fee>,
+}
+
+impl<'a> Extension for Transfer<'a> {
+    type Response = TransferData;
+}
+
+impl<'a> Transaction<Transfer<'a>> for DomainTransfer<'a> {}
