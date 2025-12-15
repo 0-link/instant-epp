@@ -86,9 +86,9 @@ pub struct DomainTransfer<'a> {
     /// The transfer operation to perform indicated by the 'op' attr
     /// The values are one of transfer or query
     #[xml(rename = "op", attribute)]
-    operation: &'a str,
+    pub operation: &'a str,
     /// The data under the `<transfer>` tag in the transfer request
-    domain: DomainTransferReqData<'a>,
+    pub domain: DomainTransferReqData<'a>,
 }
 
 // Response

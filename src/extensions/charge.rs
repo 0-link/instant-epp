@@ -1,4 +1,4 @@
-use crate::domain::{DomainCheck, DomainCreate, DomainRenew};
+use crate::domain::{DomainCheck, DomainCreate, DomainRenew, DomainTransfer};
 use crate::request::{Extension, Transaction};
 use instant_xml::{Deserializer, Error, FromXml, Id, Kind, ToXml};
 use std::ops::Deref;
@@ -206,6 +206,15 @@ impl Agreement {
     ) -> Self {
         Self::new_with_command("renew", category_name, category_value, charge_type, amount)
     }
+
+    pub fn transfer(
+        category_name: Option<String>,
+        category_value: String,
+        charge_type: String,
+        amount: f64,
+    ) -> Self {
+        Self::new_with_command("transfer", category_name, category_value, charge_type, amount)
+    }
 }
 
 impl Extension for Agreement {
@@ -215,3 +224,4 @@ impl Extension for Agreement {
 
 impl<'a> Transaction<Agreement> for DomainCreate<'a> {}
 impl<'a> Transaction<Agreement> for DomainRenew<'a> {}
+impl<'a> Transaction<Agreement> for DomainTransfer<'a> {}
