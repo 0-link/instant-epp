@@ -56,6 +56,7 @@ pub mod extensions {
     pub mod composite;
     pub mod consolidate;
     pub mod fee;
+    pub mod fee07;
     pub mod frnic;
     pub mod low_balance;
     pub mod namestore;
