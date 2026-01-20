@@ -25,7 +25,8 @@ pub struct ServiceMenu {
 #[xml(ns(EPP_XMLNS), rename = "svcMenu")]
 struct FlattenedServiceMenu {
     version: String,
-    lang: String,
+    #[xml(rename = "lang")]
+    lang: Vec<String>,
     #[xml(rename = "objURI")]
     obj_uris: Vec<String>,
     #[xml(rename = "svcExtension")]
@@ -50,10 +51,16 @@ impl<'xml> FromXml<'xml> for ServiceMenu {
             None => return Ok(()),
         };
 
+        let primary_lang = flattened
+            .lang
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "en".to_string());
+
         *into = Some(Self {
             options: Options {
                 version: flattened.version.into(),
-                lang: flattened.lang.into(),
+                lang: primary_lang.into(),
             },
             services: Services {
                 obj_uris: flattened.obj_uris.into_iter().map(|s| s.into()).collect(),
