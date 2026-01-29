@@ -1,13 +1,28 @@
+use crate::common::NoExtension;
 use crate::domain::{DomainCheck, DomainCreate, DomainRenew, DomainTransfer};
 use crate::request::{Extension, Transaction};
-use instant_xml::{Deserializer, Error, FromXml, Id, Kind, ToXml};
+use instant_xml::{Deserializer, Error, FromXml, Id, Kind, Serializer, ToXml};
+use std::fmt::Write;
 use std::ops::Deref;
-use crate::common::NoExtension;
 
 pub const XMLNS: &str = "http://www.unitedtld.com/epp/charge-1.0";
 
-#[derive(Debug, Eq, PartialEq, ToXml)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ChargeExtension;
+
+impl ToXml for ChargeExtension {
+    fn serialize<W: Write + ?Sized>(
+        &self,
+        _field: Option<Id<'_>>,
+        _serializer: &mut Serializer<W>,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn present(&self) -> bool {
+        false
+    }
+}
 
 impl Extension for ChargeExtension {
     const DO_SEND: bool = false;
@@ -213,7 +228,13 @@ impl Agreement {
         charge_type: String,
         amount: f64,
     ) -> Self {
-        Self::new_with_command("transfer", category_name, category_value, charge_type, amount)
+        Self::new_with_command(
+            "transfer",
+            category_name,
+            category_value,
+            charge_type,
+            amount,
+        )
     }
 }
 

@@ -58,6 +58,7 @@ pub mod extensions {
     pub mod fee;
     pub mod fee07;
     pub mod frnic;
+    pub mod launch;
     pub mod low_balance;
     pub mod namestore;
     pub mod rgp;

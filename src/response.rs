@@ -3,7 +3,7 @@
 use std::fmt::Debug;
 
 use chrono::{DateTime, Utc};
-use instant_xml::{FromXml, Kind};
+use instant_xml::{Deserializer, Error, FromXml, Id, Kind};
 
 use crate::common::EPP_XMLNS;
 
@@ -13,11 +13,35 @@ use crate::common::EPP_XMLNS;
 pub struct Undef;
 
 /// Type corresponding to the `<value>` tag under `<extValue>` in an EPP response XML
-#[derive(Debug, Eq, FromXml, PartialEq)]
-#[xml(rename = "value", ns(EPP_XMLNS))]
-pub struct ResultValue {
-    /// The `<undef>` element
-    pub undef: Undef,
+#[derive(Debug, Eq, PartialEq)]
+pub struct ResultValue;
+
+impl<'xml> FromXml<'xml> for ResultValue {
+    #[inline]
+    fn matches(id: Id<'_>, field: Option<Id<'_>>) -> bool {
+        match field {
+            Some(field) => id == field,
+            None => false,
+        }
+    }
+
+    fn deserialize<'cx>(
+        acc: &mut Self::Accumulator,
+        field: &'static str,
+        deserializer: &mut Deserializer<'cx, 'xml>,
+    ) -> Result<(), Error> {
+        if acc.is_some() {
+            return Err(Error::DuplicateValue(field));
+        }
+
+        // The <value> element can contain arbitrary extension data (not just <undef>).
+        deserializer.ignore()?;
+        *acc = Some(ResultValue);
+        Ok(())
+    }
+
+    type Accumulator = Option<Self>;
+    const KIND: Kind = Kind::Element;
 }
 
 /// Type corresponding to the `<extValue>` tag in an EPP response XML
