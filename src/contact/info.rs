@@ -64,7 +64,7 @@ pub struct InfoData {
     /// The fax data for the contact
     pub fax: Option<Fax<'static>>,
     /// The email for the contact
-    pub email: String,
+    pub email: Option<String>,
     /// The epp user to whom the contact belongs
     #[xml(rename = "clID")]
     pub client_id: String,
@@ -137,7 +137,7 @@ mod tests {
         assert_eq!(*voice_ext, "123".to_string());
         assert_eq!(fax.number, "+33.86698799".to_string());
         assert_eq!(*fax_ext, "243".to_string());
-        assert_eq!(result.email, "contact@eppdev.net");
+        assert_eq!(result.email.as_deref(), Some("contact@eppdev.net"));
         assert_eq!(result.client_id, "eppdev");
         assert_eq!(result.creator_id, "SYSTEM");
         assert_eq!(
@@ -176,7 +176,7 @@ mod tests {
         assert_eq!(result.postal_info.address.country.alpha2, "FR");
         assert_eq!(result.voice, None);
         assert_eq!(result.fax, None);
-        assert_eq!(result.email, "contact@eppdev.net");
+        assert_eq!(result.email.as_deref(), Some("contact@eppdev.net"));
         assert_eq!(result.client_id, "eppdev");
         assert_eq!(result.creator_id, "SYSTEM");
         assert_eq!(

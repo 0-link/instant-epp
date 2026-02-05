@@ -7,6 +7,7 @@ use crate::extensions::low_balance::LowBalance;
 use crate::extensions::rgp::poll::RgpPollData;
 use crate::host;
 use crate::request::{Command, Transaction};
+use crate::contact::info::InfoData as ContactInfoData;
 
 impl Transaction<NoExtension> for Poll {}
 
@@ -72,6 +73,8 @@ pub enum PollData {
     DomainInfo(domain::InfoData),
     /// Data under the `<host:infData>` tag
     HostInfo(host::InfoData),
+    /// Data under the `<contact:infData>` tag
+    ContactInfo(ContactInfoData),
     /// Data under the `<lowbalance>` tag
     LowBalance(LowBalance),
     /// Data under the `<rgp-poll:pollData>` tag

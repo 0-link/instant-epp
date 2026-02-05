@@ -16,7 +16,8 @@ pub(crate) fn serialize(data: impl ToXml) -> Result<String, Error> {
 }
 
 pub(crate) fn deserialize<T: FromXmlOwned>(xml: &str) -> Result<T, Error> {
-    match instant_xml::from_str::<Epp<T>>(xml) {
+    let xml = normalize_fee023_empty_prefix(xml);
+    match instant_xml::from_str::<Epp<T>>(&xml) {
         Ok(Epp { data }) => Ok(data),
         Err(e) => Err(Error::Xml(e.into())),
     }
@@ -26,4 +27,19 @@ pub(crate) fn deserialize<T: FromXmlOwned>(xml: &str) -> Result<T, Error> {
 #[xml(rename = "epp", ns(EPP_XMLNS))]
 pub(crate) struct Epp<T> {
     pub(crate) data: T,
+}
+
+fn normalize_fee023_empty_prefix(xml: &str) -> String {
+    const BAD_XMLNS: &str = "xmlns:=\"urn:ietf:params:xml:ns:fee-0.23\"";
+    const GOOD_XMLNS: &str = "xmlns:fee=\"urn:ietf:params:xml:ns:fee-0.23\"";
+
+    if !xml.contains(BAD_XMLNS) {
+        return xml.to_string();
+    }
+
+    // Some registries emit an empty namespace prefix (e.g. "<:chkData xmlns:="...">"),
+    // which is invalid XML. Normalize to a real prefix so the parser can proceed.
+    xml.replace(BAD_XMLNS, GOOD_XMLNS)
+        .replace("<:", "<fee:")
+        .replace("</:", "</fee:")
 }

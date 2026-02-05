@@ -56,6 +56,7 @@ pub mod extensions {
     pub mod composite;
     pub mod consolidate;
     pub mod fee;
+    pub mod fee023;
     pub mod fee07;
     pub mod frnic;
     pub mod launch;
