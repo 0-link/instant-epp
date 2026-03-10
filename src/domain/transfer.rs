@@ -119,6 +119,44 @@ pub struct TransferData {
     pub expiring_at: Option<DateTime<Utc>>,
 }
 
+/// Type that represents the `<panData>` tag for domain pending action poll messages
+#[derive(Debug, Eq, FromXml, PartialEq)]
+#[xml(rename = "panData", ns(XMLNS))]
+pub struct PendingActionData {
+    /// The pending action target and result
+    pub name: PendingActionName,
+    /// The transaction identifiers associated with the pending action
+    #[xml(rename = "paTRID")]
+    pub transaction_ids: PendingActionTRID,
+    /// The date the pending action completed
+    #[xml(rename = "paDate")]
+    pub date: DateTime<Utc>,
+}
+
+/// Type that represents the `<name>` tag in domain pending action poll messages
+#[derive(Debug, Eq, FromXml, PartialEq)]
+#[xml(rename = "name", ns(XMLNS))]
+pub struct PendingActionName {
+    /// Whether the pending action completed successfully
+    #[xml(attribute, rename = "paResult")]
+    pub result: bool,
+    /// The domain name
+    #[xml(direct)]
+    pub name: String,
+}
+
+/// Type that represents the `<paTRID>` tag in domain pending action poll messages
+#[derive(Debug, Eq, FromXml, PartialEq)]
+#[xml(rename = "paTRID", ns(XMLNS))]
+pub struct PendingActionTRID {
+    /// The client transaction identifier of the original pending action
+    #[xml(rename = "clTRID", ns(EPP_XMLNS))]
+    pub client_tr_id: Option<String>,
+    /// The server transaction identifier of the original pending action
+    #[xml(rename = "svTRID", ns(EPP_XMLNS))]
+    pub server_tr_id: String,
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::{TimeZone, Utc};

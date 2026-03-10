@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+    <response>
+        <result code="1000">
+            <msg lang="en">Command completed successfully</msg>
+        </result>
+        <extension>
+            <fee:updData xmlns:fee="urn:ietf:params:xml:ns:epp:fee-1.0">
+                <fee:currency>USD</fee:currency>
+                <fee:fee>80.0</fee:fee>
+            </fee:updData>
+        </extension>
+        <trID>
+            <clTRID>cltrid:1626454866</clTRID>
+            <svTRID>RO-6879-1627224678242975</svTRID>
+        </trID>
+    </response>
+</epp>

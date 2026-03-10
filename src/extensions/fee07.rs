@@ -5,7 +5,7 @@
 
 use instant_xml::{FromXml, ToXml};
 
-use crate::domain::{DomainCheck, DomainCreate, DomainRenew, DomainTransfer};
+use crate::domain::{DomainCheck, DomainCreate, DomainRenew, DomainTransfer, DomainUpdate};
 use crate::request::{Extension, Transaction};
 
 /// fee-0.7 namespace (pre-RFC8748)
@@ -146,7 +146,7 @@ pub struct Domain<'a> {
 impl<'a> Check<'a> {
     /// Convenience helper similar to your fee-1.0 `Check::new(...)`, but fee-0.7 needs the names.
     ///
-    /// It emits (create, renew, transfer) entries per domain name.
+    /// It emits (create, renew, transfer, restore) entries per domain name.
     pub fn new(
         names: impl IntoIterator<Item = &'a str>,
         currency: Option<&'a str>,
@@ -156,7 +156,7 @@ impl<'a> Check<'a> {
 
         let mut domains = Vec::new();
         for name in names {
-            for cmd in ["create", "renew", "transfer"] {
+            for cmd in ["create", "renew", "transfer", "restore"] {
                 domains.push(Domain {
                     name,
                     currency,
@@ -165,7 +165,7 @@ impl<'a> Check<'a> {
                         subphase: None,
                         value: cmd.to_string(),
                     },
-                    period,
+                    period: if cmd == "restore" { None } else { period },
                 });
             }
         }
@@ -211,7 +211,7 @@ pub struct CheckDomainData {
 }
 
 // -------------------------------------------------------------------------------------------
-// REQUEST SIDE: <extension><fee:create|renew|transfer>…</fee:...></extension>
+// REQUEST SIDE: <extension><fee:create|renew|transfer|update>…</fee:...></extension>
 // -------------------------------------------------------------------------------------------
 
 #[derive(Debug, ToXml)]
@@ -244,6 +244,19 @@ pub struct Renew<'a> {
 #[derive(Debug, ToXml)]
 #[xml(rename = "transfer", ns(XMLNS))]
 pub struct Transfer<'a> {
+    #[xml(rename = "currency")]
+    pub currency: Option<&'a str>,
+
+    #[xml(rename = "fee")]
+    pub fees: Vec<FeeReq<'a>>,
+
+    #[xml(rename = "credit")]
+    pub credits: Vec<CreditReq<'a>>,
+}
+
+#[derive(Debug, ToXml)]
+#[xml(rename = "update", ns(XMLNS))]
+pub struct Update<'a> {
     #[xml(rename = "currency")]
     pub currency: Option<&'a str>,
 
@@ -332,8 +345,28 @@ impl<'a> Transfer<'a> {
     }
 }
 
+impl<'a> Update<'a> {
+    pub fn new(currency: Option<&'a str>, amount: f64) -> Self {
+        Self {
+            currency,
+            fees: vec![FeeReq {
+                description: None,
+                refundable: None,
+                grace_period: None,
+                applied: None,
+                amount,
+            }],
+            credits: vec![],
+        }
+    }
+
+    pub fn restore(currency: Option<&'a str>, amount: f64) -> Self {
+        Self::new(currency, amount)
+    }
+}
+
 // -------------------------------------------------------------------------------------------
-// RESPONSE SIDE: <fee:creData>, <fee:renData>, <fee:trnData>
+// RESPONSE SIDE: <fee:creData>, <fee:renData>, <fee:trnData>, <fee:upData>
 // -------------------------------------------------------------------------------------------
 
 /// fee-0.7 "transform result" type (create/renew/update) includes balance/creditLimit optionally.  [oai_citation:6‡IETF Datatracker](https://datatracker.ietf.org/doc/draft-brown-epp-fees/04/)
@@ -398,6 +431,25 @@ pub struct TransferData {
     pub credit_limit: Option<f64>,
 }
 
+#[derive(Debug, FromXml)]
+#[xml(rename = "upData", ns(XMLNS))]
+pub struct UpdateData {
+    #[xml(rename = "currency")]
+    pub currency: String,
+
+    #[xml(rename = "fee")]
+    pub fees: Vec<Fee>,
+
+    #[xml(rename = "credit")]
+    pub credits: Vec<Credit>,
+
+    #[xml(rename = "balance")]
+    pub balance: Option<f64>,
+
+    #[xml(rename = "creditLimit")]
+    pub credit_limit: Option<f64>,
+}
+
 impl<'a> Extension for Create<'a> {
     type Response = CreateData;
 }
@@ -407,7 +459,82 @@ impl<'a> Extension for Renew<'a> {
 impl<'a> Extension for Transfer<'a> {
     type Response = TransferData;
 }
+impl<'a> Extension for Update<'a> {
+    type Response = UpdateData;
+}
 
 impl<'a> Transaction<Create<'a>> for DomainCreate<'a> {}
 impl<'a> Transaction<Renew<'a>> for DomainRenew<'a> {}
 impl<'a> Transaction<Transfer<'a>> for DomainTransfer<'a> {}
+impl<'a> Transaction<Update<'a>> for DomainUpdate<'a> {}
+
+#[cfg(test)]
+mod tests {
+    use super::{Check, Update, XMLNS};
+    use crate::client::RequestData;
+    use crate::domain::update::{DomainChangeInfo, DomainUpdate};
+    use crate::domain::DomainCheck;
+    use crate::request::{Command, CommandWrapper, Extension, Transaction};
+    use crate::response::ResultCode;
+    use crate::tests::{response_from_file_with_ext, CLTRID, SUCCESS_MSG, SVTRID};
+    use crate::xml;
+
+    fn serialize_request<'c, 'e, Cmd, Ext>(req: impl Into<RequestData<'c, 'e, Cmd, Ext>>) -> String
+    where
+        Cmd: Transaction<Ext> + Command + 'c,
+        Ext: Extension + 'e,
+    {
+        let req = req.into();
+        xml::serialize(CommandWrapper::new(req.command, req.extension, CLTRID)).unwrap()
+    }
+
+    fn empty_domain_update<'a>() -> DomainUpdate<'a> {
+        let mut object = DomainUpdate::new("eppdev.com");
+        object.info(DomainChangeInfo {
+            registrant: None,
+            auth_info: None,
+        });
+        object
+    }
+
+    #[test]
+    fn check_new_includes_restore_without_period() {
+        let object = DomainCheck {
+            domains: &["eppdev.com"],
+        };
+        let ext = Check::new(["eppdev.com"], Some("USD"), Some(1));
+
+        let xml = serialize_request((&object, &ext));
+
+        assert!(xml.contains(">restore</command>"));
+        assert_eq!(xml.matches(r#"<period unit="y">1</period>"#).count(), 3);
+    }
+
+    #[test]
+    fn restore_serializes_as_fee_update() {
+        let object = empty_domain_update();
+        let ext = Update::restore(Some("USD"), 80.0);
+
+        let xml = serialize_request((&object, &ext));
+
+        assert!(xml.contains(&format!(r#"<update xmlns="{}">"#, XMLNS)));
+        assert!(xml.contains("<currency>USD</currency>"));
+        assert!(xml.contains("<fee>80</fee>") || xml.contains("<fee>80.0</fee>"));
+    }
+
+    #[test]
+    fn update_response() {
+        let object = response_from_file_with_ext::<DomainUpdate, Update>(
+            "response/extensions/fee07_update.xml",
+        );
+        let ext = object.extension.unwrap();
+
+        assert_eq!(object.result.code, ResultCode::CommandCompletedSuccessfully);
+        assert_eq!(object.result.message, SUCCESS_MSG);
+        assert_eq!(ext.data.currency, "USD");
+        assert_eq!(ext.data.fees.len(), 1);
+        assert_eq!(ext.data.fees[0].amount, 80.0);
+        assert_eq!(object.tr_ids.client_tr_id.unwrap(), CLTRID);
+        assert_eq!(object.tr_ids.server_tr_id, SVTRID);
+    }
+}

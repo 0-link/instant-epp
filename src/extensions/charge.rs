@@ -1,5 +1,5 @@
 use crate::common::NoExtension;
-use crate::domain::{DomainCheck, DomainCreate, DomainRenew, DomainTransfer};
+use crate::domain::{DomainCheck, DomainCreate, DomainRenew, DomainTransfer, DomainUpdate};
 use crate::request::{Extension, Transaction};
 use instant_xml::{Deserializer, Error, FromXml, Id, Kind, Serializer, ToXml};
 use std::fmt::Write;
@@ -178,6 +178,10 @@ pub struct AgreementAmount {
     #[xml(attribute, rename = "command")]
     pub command: &'static str,
 
+    /// Optional `name="restore"` for restore pricing.
+    #[xml(attribute, rename = "name")]
+    pub name: Option<&'static str>,
+
     /// Numeric amount inside <charge:amount>.
     #[xml(direct)]
     pub amount: f64,
@@ -187,6 +191,7 @@ impl Agreement {
     /// Internal constructor to reuse for different commands.
     fn new_with_command(
         command: &'static str,
+        name: Option<&'static str>,
         category_name: Option<String>,
         category_value: String, // "premium" / "standard"
         charge_type: String,    // e.g. "price"
@@ -199,7 +204,11 @@ impl Agreement {
                     value: category_value,
                 },
                 charge_type,
-                amount: AgreementAmount { command, amount },
+                amount: AgreementAmount {
+                    command,
+                    name,
+                    amount,
+                },
             },
         }
     }
@@ -210,7 +219,14 @@ impl Agreement {
         charge_type: String,
         amount: f64,
     ) -> Self {
-        Self::new_with_command("create", category_name, category_value, charge_type, amount)
+        Self::new_with_command(
+            "create",
+            None,
+            category_name,
+            category_value,
+            charge_type,
+            amount,
+        )
     }
 
     pub fn renew(
@@ -219,7 +235,14 @@ impl Agreement {
         charge_type: String,
         amount: f64,
     ) -> Self {
-        Self::new_with_command("renew", category_name, category_value, charge_type, amount)
+        Self::new_with_command(
+            "renew",
+            None,
+            category_name,
+            category_value,
+            charge_type,
+            amount,
+        )
     }
 
     pub fn transfer(
@@ -230,6 +253,23 @@ impl Agreement {
     ) -> Self {
         Self::new_with_command(
             "transfer",
+            None,
+            category_name,
+            category_value,
+            charge_type,
+            amount,
+        )
+    }
+
+    pub fn restore(
+        category_name: Option<String>,
+        category_value: String,
+        charge_type: String,
+        amount: f64,
+    ) -> Self {
+        Self::new_with_command(
+            "update",
+            Some("restore"),
             category_name,
             category_value,
             charge_type,
@@ -246,3 +286,77 @@ impl Extension for Agreement {
 impl<'a> Transaction<Agreement> for DomainCreate<'a> {}
 impl<'a> Transaction<Agreement> for DomainRenew<'a> {}
 impl<'a> Transaction<Agreement> for DomainTransfer<'a> {}
+impl<'a> Transaction<Agreement> for DomainUpdate<'a> {}
+
+#[cfg(test)]
+mod tests {
+    use super::{Agreement, XMLNS};
+    use crate::client::RequestData;
+    use crate::domain::update::{DomainChangeInfo, DomainUpdate};
+    use crate::extensions::composite::CompositeExtWithFirstResponse;
+    use crate::extensions::rgp::request::{RgpRestoreRequest, Update as RgpUpdate};
+    use crate::request::{Command, CommandWrapper, Extension, Transaction};
+    use crate::tests::CLTRID;
+    use crate::xml;
+
+    fn serialize_request<'c, 'e, Cmd, Ext>(req: impl Into<RequestData<'c, 'e, Cmd, Ext>>) -> String
+    where
+        Cmd: Transaction<Ext> + Command + 'c,
+        Ext: Extension + 'e,
+    {
+        let req = req.into();
+        xml::serialize(CommandWrapper::new(req.command, req.extension, CLTRID)).unwrap()
+    }
+
+    fn empty_domain_update<'a>() -> DomainUpdate<'a> {
+        let mut object = DomainUpdate::new("eppdev.com");
+        object.info(DomainChangeInfo {
+            registrant: None,
+            auth_info: None,
+        });
+        object
+    }
+
+    #[test]
+    fn restore_serializes_as_charge_update() {
+        let object = empty_domain_update();
+        let ext = Agreement::restore(
+            Some("PIR-BBBB".to_string()),
+            "premium".to_string(),
+            "price".to_string(),
+            80.0,
+        );
+
+        let xml = serialize_request((&object, &ext));
+
+        assert!(xml.contains(&format!(r#"<agreement xmlns="{}">"#, XMLNS)));
+        assert!(xml.contains(r#"command="update" name="restore""#));
+        assert!(xml.contains(">premium</category>"));
+        assert!(xml.contains(">price</type>"));
+    }
+
+    #[test]
+    fn composite_restore_serializes_rgp_before_charge() {
+        let object = empty_domain_update();
+        let ext = CompositeExtWithFirstResponse {
+            first: RgpUpdate {
+                data: RgpRestoreRequest::default(),
+            },
+            second: Agreement::restore(
+                Some("PIR-BBBB".to_string()),
+                "premium".to_string(),
+                "price".to_string(),
+                80.0,
+            ),
+        };
+
+        let xml = serialize_request((&object, &ext));
+
+        let rgp_idx = xml.find(crate::extensions::rgp::XMLNS).unwrap();
+        let charge_idx = xml.find(XMLNS).unwrap();
+
+        assert!(rgp_idx < charge_idx);
+        assert!(xml.contains(r#"op="request""#));
+        assert!(xml.contains(r#"command="update" name="restore""#));
+    }
+}

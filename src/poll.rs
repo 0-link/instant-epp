@@ -1,13 +1,13 @@
 use instant_xml::{FromXml, ToXml};
 
 use crate::common::{NoExtension, EPP_XMLNS};
+use crate::contact::info::InfoData as ContactInfoData;
 use crate::domain;
-use crate::domain::transfer::TransferData;
+use crate::domain::transfer::{PendingActionData, TransferData};
 use crate::extensions::low_balance::LowBalance;
 use crate::extensions::rgp::poll::RgpPollData;
 use crate::host;
 use crate::request::{Command, Transaction};
-use crate::contact::info::InfoData as ContactInfoData;
 
 impl Transaction<NoExtension> for Poll {}
 
@@ -69,6 +69,8 @@ impl ToXml for Ack<'_> {
 pub enum PollData {
     /// Data under the `<domain:trnData>` tag
     DomainTransfer(TransferData),
+    /// Data under the `<domain:panData>` tag
+    DomainPendingAction(PendingActionData),
     /// Data under the `<domain:infData>` tag
     DomainInfo(domain::InfoData),
     /// Data under the `<host:infData>` tag
@@ -162,6 +164,60 @@ mod tests {
 
         assert_eq!(object.tr_ids.client_tr_id.unwrap(), CLTRID);
         assert_eq!(object.tr_ids.server_tr_id, SVTRID);
+    }
+
+    #[test]
+    fn domain_pending_action_response() {
+        let object = response_from_file::<Poll>("response/poll/poll_domain_pan.xml");
+        let result = object.res_data().unwrap();
+        let msg = object.message_queue().unwrap();
+
+        assert_eq!(
+            object.result.code,
+            ResultCode::CommandCompletedSuccessfullyAckToDequeue
+        );
+        assert_eq!(
+            object.result.message,
+            "Command completed successfully; ack to dequeue."
+        );
+        assert_eq!(msg.count, 1);
+        assert_eq!(msg.id, "3598880".to_string());
+        assert_eq!(
+            msg.date,
+            Utc.with_ymd_and_hms(2026, 3, 10, 0, 16, 57).single()
+        );
+        assert_eq!(
+            msg.message.as_ref().unwrap().text,
+            "Pending action completed successfully."
+        );
+
+        if let PollData::DomainPendingAction(pan) = result {
+            assert!(pan.name.result);
+            assert_eq!(pan.name.name, "early.space");
+            assert_eq!(
+                pan.transaction_ids.client_tr_id.as_deref(),
+                Some("7664b1f7-02c6-4a1c-8d8d-3059e02ef3ac")
+            );
+            assert_eq!(
+                pan.transaction_ids.server_tr_id,
+                "CNIC-1FD88D573250E421588B03B8A01CBBD687E62AF64CB7CF378AF5D254D6C"
+            );
+            assert_eq!(
+                pan.date,
+                Utc.with_ymd_and_hms(2026, 3, 10, 0, 16, 57).unwrap()
+            );
+        } else {
+            panic!("Wrong type");
+        }
+
+        assert_eq!(
+            object.tr_ids.client_tr_id.as_deref(),
+            Some("92221169-4e3e-40cf-8d22-9c7450e5fef1")
+        );
+        assert_eq!(
+            object.tr_ids.server_tr_id,
+            "CNIC-D5DA09337839C18D0C1E897E932A03E100B9C1699336BD70CFBE3448524"
+        );
     }
 
     #[test]

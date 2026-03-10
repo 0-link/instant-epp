@@ -1,6 +1,6 @@
 use instant_xml::{FromXml, ToXml};
 
-use crate::domain::{DomainCheck, DomainCreate, DomainRenew, DomainTransfer};
+use crate::domain::{DomainCheck, DomainCreate, DomainRenew, DomainTransfer, DomainUpdate};
 use crate::request::{Extension, Transaction};
 
 /// RFC 8748 namespace
@@ -78,7 +78,7 @@ impl Period {
 }
 
 impl<'a> Check<'a> {
-    /// Helper: typical "USD, create+renew 1y" request used with <domain:check>.
+    /// Helper: typical "USD, create+renew+transfer+restore" request used with <domain:check>.
     pub fn new(currency: Option<&'a str>, period_years: Option<u16>) -> Self {
         Check {
             currency,
@@ -100,6 +100,12 @@ impl<'a> Check<'a> {
                     phase: None,
                     subphase: None,
                     period: period_years.map(Period::years),
+                },
+                Command {
+                    name: "restore",
+                    phase: None,
+                    subphase: None,
+                    period: None,
                 },
             ],
         }
@@ -403,3 +409,165 @@ impl<'a> Extension for Transfer<'a> {
 }
 
 impl<'a> Transaction<Transfer<'a>> for DomainTransfer<'a> {}
+
+//
+// REQUEST SIDE: <extension><fee:update>…</fee:update></extension>
+//
+
+#[derive(Debug, ToXml)]
+#[xml(rename = "update", ns(XMLNS))]
+pub struct Update<'a> {
+    /// Optional global currency, e.g. "USD"
+    #[xml(rename = "currency")]
+    pub currency: Option<&'a str>,
+
+    /// Single <fee:fee> with the expected amount
+    #[xml(rename = "fee")]
+    pub fee: UpdateFee<'a>,
+}
+
+/// Request-side <fee:fee> for update.
+#[derive(Debug, ToXml)]
+#[xml(rename = "fee", ns(XMLNS))]
+pub struct UpdateFee<'a> {
+    #[xml(attribute)]
+    pub description: Option<&'a str>,
+
+    #[xml(attribute)]
+    pub refundable: Option<bool>,
+
+    #[xml(attribute, rename = "grace-period")]
+    pub grace_period: Option<&'a str>,
+
+    #[xml(direct)]
+    pub amount: f64,
+}
+
+impl<'a> Update<'a> {
+    pub fn new(currency: Option<&'a str>, amount: f64) -> Self {
+        Self {
+            currency,
+            fee: UpdateFee {
+                description: None,
+                refundable: None,
+                grace_period: None,
+                amount,
+            },
+        }
+    }
+
+    pub fn restore(currency: Option<&'a str>, amount: f64) -> Self {
+        Self::new(currency, amount)
+    }
+}
+
+#[derive(Debug, FromXml)]
+#[xml(rename = "updData", ns(XMLNS))]
+pub struct UpdateData {
+    /// <fee:currency>USD</fee:currency>
+    #[xml(rename = "currency")]
+    pub currency: String,
+
+    /// One or more <fee:fee> elements
+    #[xml(rename = "fee")]
+    pub fees: Vec<Fee>,
+}
+
+impl<'a> Extension for Update<'a> {
+    type Response = UpdateData;
+}
+
+impl<'a> Transaction<Update<'a>> for DomainUpdate<'a> {}
+
+#[cfg(test)]
+mod tests {
+    use super::{Check, Update, XMLNS};
+    use crate::client::RequestData;
+    use crate::domain::update::{DomainChangeInfo, DomainUpdate};
+    use crate::domain::DomainCheck;
+    use crate::extensions::composite::CompositeExtWithFirstResponse;
+    use crate::extensions::rgp::request::{RgpRestoreRequest, Update as RgpUpdate};
+    use crate::request::{Command, CommandWrapper, Extension, Transaction};
+    use crate::response::ResultCode;
+    use crate::tests::{response_from_file_with_ext, CLTRID, SUCCESS_MSG, SVTRID};
+    use crate::xml;
+
+    fn serialize_request<'c, 'e, Cmd, Ext>(req: impl Into<RequestData<'c, 'e, Cmd, Ext>>) -> String
+    where
+        Cmd: Transaction<Ext> + Command + 'c,
+        Ext: Extension + 'e,
+    {
+        let req = req.into();
+        xml::serialize(CommandWrapper::new(req.command, req.extension, CLTRID)).unwrap()
+    }
+
+    fn empty_domain_update<'a>() -> DomainUpdate<'a> {
+        let mut object = DomainUpdate::new("eppdev.com");
+        object.info(DomainChangeInfo {
+            registrant: None,
+            auth_info: None,
+        });
+        object
+    }
+
+    #[test]
+    fn check_new_includes_restore_without_period() {
+        let object = DomainCheck {
+            domains: &["eppdev.com"],
+        };
+        let ext = Check::new(Some("USD"), Some(1));
+
+        let xml = serialize_request((&object, &ext));
+
+        assert!(xml.contains(r#"name="restore""#));
+        assert_eq!(xml.matches(r#"<period unit="y">1</period>"#).count(), 3);
+    }
+
+    #[test]
+    fn restore_serializes_as_fee_update() {
+        let object = empty_domain_update();
+        let ext = Update::restore(Some("USD"), 80.0);
+
+        let xml = serialize_request((&object, &ext));
+
+        assert!(xml.contains(&format!(r#"<update xmlns="{}">"#, XMLNS)));
+        assert!(xml.contains("<currency>USD</currency>"));
+        assert!(xml.contains("<fee>80</fee>") || xml.contains("<fee>80.0</fee>"));
+    }
+
+    #[test]
+    fn composite_restore_serializes_fee_before_rgp() {
+        let object = empty_domain_update();
+        let ext = CompositeExtWithFirstResponse {
+            first: Update::restore(Some("USD"), 80.0),
+            second: RgpUpdate {
+                data: RgpRestoreRequest::default(),
+            },
+        };
+
+        let xml = serialize_request((&object, &ext));
+
+        let fee_idx = xml.find(XMLNS).unwrap();
+        let rgp_idx = xml.find(crate::extensions::rgp::XMLNS).unwrap();
+
+        assert!(fee_idx < rgp_idx);
+        assert!(xml.contains(r#"op="request""#));
+        assert!(xml.contains("<fee>80</fee>") || xml.contains("<fee>80.0</fee>"));
+    }
+
+    #[test]
+    fn update_response() {
+        let object = response_from_file_with_ext::<DomainUpdate, Update>(
+            "response/extensions/fee_update.xml",
+        );
+        let ext = object.extension.unwrap();
+
+        assert_eq!(object.result.code, ResultCode::CommandCompletedSuccessfully);
+        assert_eq!(object.result.message, SUCCESS_MSG);
+        assert_eq!(ext.data.currency, "USD");
+        assert_eq!(ext.data.fees.len(), 1);
+        assert_eq!(ext.data.fees[0].amount, 80.0);
+        assert_eq!(object.tr_ids.client_tr_id.unwrap(), CLTRID);
+        assert_eq!(object.tr_ids.server_tr_id, SVTRID);
+    }
+}

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+    <response>
+        <result code="1301">
+            <msg>Command completed successfully; ack to dequeue.</msg>
+        </result>
+        <msgQ count="1" id="3598880">
+            <qDate>2026-03-10T00:16:57.0Z</qDate>
+            <msg>Pending action completed successfully.</msg>
+        </msgQ>
+        <resData>
+            <domain:panData xmlns:domain="urn:ietf:params:xml:ns:domain-1.0">
+                <domain:name paResult="1">early.space</domain:name>
+                <domain:paTRID>
+                    <clTRID>7664b1f7-02c6-4a1c-8d8d-3059e02ef3ac</clTRID>
+                    <svTRID>CNIC-1FD88D573250E421588B03B8A01CBBD687E62AF64CB7CF378AF5D254D6C</svTRID>
+                </domain:paTRID>
+                <domain:paDate>2026-03-10T00:16:57.0Z</domain:paDate>
+            </domain:panData>
+        </resData>
+        <trID>
+            <clTRID>92221169-4e3e-40cf-8d22-9c7450e5fef1</clTRID>
+            <svTRID>CNIC-D5DA09337839C18D0C1E897E932A03E100B9C1699336BD70CFBE3448524</svTRID>
+        </trID>
+    </response>
+</epp>

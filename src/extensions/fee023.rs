@@ -141,7 +141,7 @@ pub struct Command<'a> {
 }
 
 impl<'a> Check<'a> {
-    /// Helper: typical "USD, create+renew+transfer 1y" request used with <domain:check>.
+    /// Helper: typical "USD, create+renew+transfer+restore 1y" request used with <domain:check>.
     pub fn new(currency: Option<&'a str>, period_years: Option<u16>) -> Self {
         Check {
             currency,
@@ -166,6 +166,13 @@ impl<'a> Check<'a> {
                     phase: None,
                     subphase: None,
                     period: period_years.map(Period::years),
+                },
+                Command {
+                    name: "restore",
+                    custom_name: None,
+                    phase: None,
+                    subphase: None,
+                    period: None,
                 },
             ],
         }
@@ -382,6 +389,10 @@ impl<'a> Update<'a> {
             credits: vec![],
         }
     }
+
+    pub fn restore(currency: Option<&'a str>, amount: f64) -> Self {
+        Self::new(currency, amount)
+    }
 }
 
 // -------------------------------------------------------------------------------------------
@@ -544,3 +555,56 @@ impl Extension for DeleteExtension {
 
 impl<'a> Transaction<DeleteExtension> for DomainDelete<'a> {}
 
+#[cfg(test)]
+mod tests {
+    use super::{Check, Update, XMLNS};
+    use crate::client::RequestData;
+    use crate::domain::update::{DomainChangeInfo, DomainUpdate};
+    use crate::domain::DomainCheck;
+    use crate::request::{Command, CommandWrapper, Extension, Transaction};
+    use crate::tests::CLTRID;
+    use crate::xml;
+
+    fn serialize_request<'c, 'e, Cmd, Ext>(req: impl Into<RequestData<'c, 'e, Cmd, Ext>>) -> String
+    where
+        Cmd: Transaction<Ext> + Command + 'c,
+        Ext: Extension + 'e,
+    {
+        let req = req.into();
+        xml::serialize(CommandWrapper::new(req.command, req.extension, CLTRID)).unwrap()
+    }
+
+    fn empty_domain_update<'a>() -> DomainUpdate<'a> {
+        let mut object = DomainUpdate::new("eppdev.com");
+        object.info(DomainChangeInfo {
+            registrant: None,
+            auth_info: None,
+        });
+        object
+    }
+
+    #[test]
+    fn check_new_includes_restore_without_period() {
+        let object = DomainCheck {
+            domains: &["eppdev.com"],
+        };
+        let ext = Check::new(Some("USD"), Some(1));
+
+        let xml = serialize_request((&object, &ext));
+
+        assert!(xml.contains(r#"name="restore""#));
+        assert_eq!(xml.matches(r#"<period unit="y">1</period>"#).count(), 3);
+    }
+
+    #[test]
+    fn restore_serializes_as_fee_update() {
+        let object = empty_domain_update();
+        let ext = Update::restore(Some("USD"), 80.0);
+
+        let xml = serialize_request((&object, &ext));
+
+        assert!(xml.contains(&format!(r#"<update xmlns="{}">"#, XMLNS)));
+        assert!(xml.contains("<currency>USD</currency>"));
+        assert!(xml.contains("<fee>80</fee>") || xml.contains("<fee>80.0</fee>"));
+    }
+}
