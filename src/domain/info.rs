@@ -100,19 +100,31 @@ pub struct InfoData {
     #[xml(rename = "crID")]
     pub creator_id: Option<String>,
     /// The domain creation date
-    #[xml(rename = "crDate")]
+    #[xml(
+        rename = "crDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc_option"
+    )]
     pub created_at: Option<DateTime<Utc>>,
     /// The domain expiry date
-    #[xml(rename = "exDate")]
+    #[xml(
+        rename = "exDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc_option"
+    )]
     pub expiring_at: Option<DateTime<Utc>>,
     /// The epp user who last updated the domain
     #[xml(rename = "upID")]
     pub updater_id: Option<String>,
     /// The domain last updated date
-    #[xml(rename = "upDate")]
+    #[xml(
+        rename = "upDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc_option"
+    )]
     pub updated_at: Option<DateTime<Utc>>,
     /// The domain transfer date
-    #[xml(rename = "trDate")]
+    #[xml(
+        rename = "trDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc_option"
+    )]
     pub transferred_at: Option<DateTime<Utc>>,
     /// The domain auth info
     #[xml(rename = "authInfo")]

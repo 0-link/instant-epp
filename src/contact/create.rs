@@ -76,7 +76,10 @@ impl<'a> ContactCreate<'a> {
 pub struct CreateData {
     /// The contact id
     pub id: String,
-    #[xml(rename = "crDate")]
+    #[xml(
+        rename = "crDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc"
+    )]
     /// The contact creation date
     pub created_at: DateTime<Utc>,
 }

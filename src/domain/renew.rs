@@ -59,7 +59,10 @@ pub struct RenewData {
     /// The name of the domain
     pub name: String,
     /// The new expiry date after renewal
-    #[xml(rename = "exDate")]
+    #[xml(
+        rename = "exDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc_option"
+    )]
     pub expiring_at: Option<DateTime<Utc>>,
 }
 

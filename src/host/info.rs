@@ -67,16 +67,25 @@ pub struct InfoData {
     #[xml(rename = "crID")]
     pub creator_id: String,
     /// The host creation date
-    #[xml(rename = "crDate")]
+    #[xml(
+        rename = "crDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc"
+    )]
     pub created_at: DateTime<Utc>,
     /// The epp user that last updated the host
     #[xml(rename = "upID")]
     pub updater_id: Option<String>,
     /// The host last update date
-    #[xml(rename = "upDate")]
+    #[xml(
+        rename = "upDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc_option"
+    )]
     pub updated_at: Option<DateTime<Utc>>,
     /// The host transfer date
-    #[xml(rename = "trDate")]
+    #[xml(
+        rename = "trDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc_option"
+    )]
     pub transferred_at: Option<DateTime<Utc>>,
 }
 

@@ -311,7 +311,10 @@ pub struct Greeting {
     #[xml(rename = "svID")]
     pub service_id: String,
     /// The date from the EPP server
-    #[xml(rename = "svDate")]
+    #[xml(
+        rename = "svDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc"
+    )]
     pub service_date: DateTime<Utc>,
     /// Data under the `<svcMenu>` element
     pub svc_menu: ServiceMenu,

@@ -271,6 +271,38 @@ mod tests {
     }
 
     #[test]
+    fn domain_info_response_with_offset_datetime() {
+        let object = response_from_file::<Poll>("response/poll/poll_domain_info_offset.xml");
+        let result = object.res_data().unwrap();
+        let msg = object.message_queue().unwrap();
+
+        assert_eq!(
+            msg.date,
+            Utc.with_ymd_and_hms(2026, 3, 30, 1, 36, 20).single()
+        );
+        assert_eq!(msg.message.as_ref().unwrap().text, "Domain created");
+
+        if let PollData::DomainInfo(info) = result {
+            assert_eq!(info.name, "nominettest.cymru");
+            assert_eq!(info.client_id, "clid-nom-cy-9999");
+            assert_eq!(
+                info.created_at,
+                Utc.with_ymd_and_hms(2026, 3, 30, 1, 36, 20).single()
+            );
+            assert_eq!(
+                info.expiring_at,
+                Utc.with_ymd_and_hms(2027, 3, 30, 1, 36, 20).single()
+            );
+            assert_eq!(
+                info.auth_info.as_ref().map(|auth| auth.password.as_ref()),
+                Some("clid-nom-cy-9999")
+            );
+        } else {
+            panic!("Wrong type");
+        }
+    }
+
+    #[test]
     fn message_only_response() {
         let object = response_from_file::<Poll>("response/poll/poll_message_only.xml");
         let msg = object.message_queue().unwrap();

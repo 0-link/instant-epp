@@ -54,7 +54,10 @@ pub struct CreateData {
     /// The host name
     pub name: String,
     /// The host creation date
-    #[xml(rename = "crDate")]
+    #[xml(
+        rename = "crDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc"
+    )]
     pub created_at: DateTime<Utc>,
 }
 

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:ietf:params:xml:ns:epp-1.0 epp-1.0.xsd">
+    <response>
+        <result code="1301">
+            <msg>Command completed successfully; ack to dequeue</msg>
+        </result>
+        <msgQ count="6" id="24191184">
+            <qDate>2026-03-30T01:36:20.000Z</qDate>
+            <msg>Domain created</msg>
+        </msgQ>
+        <resData>
+            <domain:infData xmlns:domain="urn:ietf:params:xml:ns:domain-1.0">
+                <domain:name>nominettest.cymru</domain:name>
+                <domain:roid>NOMINET-TEST-CYMRU</domain:roid>
+                <domain:status s="inactive"/>
+                <domain:registrant>nominettestcymru</domain:registrant>
+                <domain:clID>clid-nom-cy-9999</domain:clID>
+                <domain:crID>clid-nom-cy-9999</domain:crID>
+                <domain:crDate>2026-03-30T02:36:20.000+01:00</domain:crDate>
+                <domain:exDate>2027-03-30T02:36:20.000+01:00</domain:exDate>
+                <domain:authInfo>
+                    <domain:pw>clid-nom-cy-9999</domain:pw>
+                </domain:authInfo>
+            </domain:infData>
+        </resData>
+        <trID>
+            <clTRID>f1aec595-cbe8-412e-a272-fac55412eb9e</clTRID>
+            <svTRID>1957304335268322314</svTRID>
+        </trID>
+    </response>
+</epp>

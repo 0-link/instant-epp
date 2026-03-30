@@ -11,7 +11,9 @@ use super::RgpStatus;
 pub struct RgpPollData {
     pub name: String,
     pub rgp_status: RgpStatus,
+    #[xml(deserialize_with = "crate::datetime::deserialize_datetime_utc")]
     pub req_date: DateTime<Utc>,
+    #[xml(deserialize_with = "crate::datetime::deserialize_datetime_utc")]
     pub report_due_date: DateTime<Utc>,
 }
 

@@ -242,7 +242,10 @@ pub struct MessageQueue {
     #[xml(attribute)]
     pub id: String,
     /// The message date
-    #[xml(rename = "qDate")]
+    #[xml(
+        rename = "qDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc_option"
+    )]
     pub date: Option<DateTime<Utc>>,
     /// The message text
     #[xml(rename = "msg")]

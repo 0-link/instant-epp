@@ -106,16 +106,25 @@ pub struct TransferData {
     #[xml(rename = "reID")]
     pub requester_id: String,
     /// The transfer rquest date
-    #[xml(rename = "reDate")]
+    #[xml(
+        rename = "reDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc"
+    )]
     pub requested_at: DateTime<Utc>,
     /// The epp user who should acknowledge the transfer request
     #[xml(rename = "acID")]
     pub ack_id: String,
     /// THe date by which the acknowledgment should be made
-    #[xml(rename = "acDate")]
+    #[xml(
+        rename = "acDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc"
+    )]
     pub ack_by: DateTime<Utc>,
     /// The domain expiry date
-    #[xml(rename = "exDate")]
+    #[xml(
+        rename = "exDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc_option"
+    )]
     pub expiring_at: Option<DateTime<Utc>>,
 }
 
@@ -129,7 +138,10 @@ pub struct PendingActionData {
     #[xml(rename = "paTRID")]
     pub transaction_ids: PendingActionTRID,
     /// The date the pending action completed
-    #[xml(rename = "paDate")]
+    #[xml(
+        rename = "paDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc"
+    )]
     pub date: DateTime<Utc>,
 }
 

@@ -76,10 +76,16 @@ pub struct CreateData {
     /// The domain name
     pub name: String,
     /// The creation date
-    #[xml(rename = "crDate")]
+    #[xml(
+        rename = "crDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc"
+    )]
     pub created_at: DateTime<Utc>,
     /// The expiry date
-    #[xml(rename = "exDate")]
+    #[xml(
+        rename = "exDate",
+        deserialize_with = "crate::datetime::deserialize_datetime_utc_option"
+    )]
     pub expiring_at: Option<DateTime<Utc>>,
 }
 
