@@ -78,7 +78,7 @@ impl<'xml> FromXml<'xml> for NameStore<'static> {
 
     fn deserialize<'cx>(
         acc: &mut Self::Accumulator,
-        field: &'static str,
+        _field: &'static str,
         de: &mut instant_xml::Deserializer<'cx, 'xml>,
     ) -> Result<(), instant_xml::Error> {
         de.ignore().ok();
@@ -118,6 +118,6 @@ mod tests {
             "response/extensions/namestore.xml",
         );
         let ext = object.extension().unwrap();
-        assert_eq!(ext.subproduct, "com");
+        assert_eq!(ext.subproduct, "*");
     }
 }

@@ -35,6 +35,8 @@
 #![warn(unreachable_pub)]
 #![warn(clippy::use_self)]
 
+#[cfg(feature = "transaction-audit")]
+pub mod audit;
 pub mod client;
 pub mod common;
 pub mod connection;
@@ -69,6 +71,9 @@ pub mod extensions {
 
 pub use client::EppClient;
 pub use error::Error;
+
+#[cfg(feature = "transaction-audit")]
+pub use audit::{EppTransactionAuditEvent, EppTransactionAuditSink};
 
 #[cfg(test)]
 pub mod tests;

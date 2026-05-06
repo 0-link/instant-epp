@@ -1,15 +1,24 @@
 use std::time::Duration;
 
+#[cfg(feature = "transaction-audit")]
+use std::sync::Arc;
+
+#[cfg(feature = "transaction-audit")]
+use chrono::{DateTime, Utc};
 #[cfg(feature = "__rustls")]
 use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tracing::{debug, error};
 
+#[cfg(feature = "transaction-audit")]
+use crate::audit::{EppTransactionAuditEvent, EppTransactionAuditSink};
 use crate::common::NoExtension;
 pub use crate::connection::Connector;
 use crate::connection::EppConnection;
 use crate::error::Error;
 use crate::hello::{Greeting, Hello};
 use crate::request::{Command, CommandWrapper, Extension, Transaction};
+#[cfg(feature = "transaction-audit")]
+use crate::response::{EppResult, ResponseTRID};
 use crate::response::{Response, ResponseStatus};
 use crate::xml;
 
@@ -66,6 +75,8 @@ use crate::xml;
 /// ```
 pub struct EppClient<C: Connector> {
     connection: EppConnection<C>,
+    #[cfg(feature = "transaction-audit")]
+    audit_sink: Option<Arc<dyn EppTransactionAuditSink>>,
 }
 
 #[cfg(feature = "__rustls")]
@@ -95,6 +106,26 @@ impl EppClient<RustlsConnector> {
         let connector = builder.build().map_err(|err| Error::Other(Box::new(err)))?;
         Self::new(connector, registry, timeout).await
     }
+
+    /// Connect to the specified `addr` and `hostname` over TLS with an audit sink.
+    #[cfg(feature = "transaction-audit")]
+    pub async fn connect_with_audit(
+        registry: String,
+        server: (String, u16),
+        identity: Option<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)>,
+        timeout: Duration,
+        audit_sink: Option<Arc<dyn EppTransactionAuditSink>>,
+    ) -> Result<Self, Error> {
+        let builder =
+            RustlsConnector::builder(server).map_err(|err| Error::Other(Box::new(err)))?;
+        let builder = match identity {
+            Some((certs, key)) => builder.client_auth(certs, key),
+            None => builder,
+        };
+
+        let connector = builder.build().map_err(|err| Error::Other(Box::new(err)))?;
+        Self::new_with_audit(connector, registry, timeout, audit_sink).await
+    }
 }
 
 impl<C: Connector> EppClient<C> {
@@ -102,7 +133,29 @@ impl<C: Connector> EppClient<C> {
     pub async fn new(connector: C, registry: String, timeout: Duration) -> Result<Self, Error> {
         Ok(Self {
             connection: EppConnection::new(connector, registry, timeout).await?,
+            #[cfg(feature = "transaction-audit")]
+            audit_sink: None,
         })
+    }
+
+    /// Create an `EppClient` from an already established connection with an audit sink.
+    #[cfg(feature = "transaction-audit")]
+    pub async fn new_with_audit(
+        connector: C,
+        registry: String,
+        timeout: Duration,
+        audit_sink: Option<Arc<dyn EppTransactionAuditSink>>,
+    ) -> Result<Self, Error> {
+        Ok(Self {
+            connection: EppConnection::new(connector, registry, timeout).await?,
+            audit_sink,
+        })
+    }
+
+    /// Replace the configured transaction audit sink.
+    #[cfg(feature = "transaction-audit")]
+    pub fn set_audit_sink(&mut self, audit_sink: Option<Arc<dyn EppTransactionAuditSink>>) {
+        self.audit_sink = audit_sink;
     }
 
     /// Executes an EPP Hello call and returns the response as a `Greeting`
@@ -110,10 +163,59 @@ impl<C: Connector> EppClient<C> {
         let xml = xml::serialize(Hello)?;
 
         debug!("{}: hello: {}", self.connection.registry, &xml);
+        #[cfg(feature = "transaction-audit")]
+        let (response, request_at, response_at) = {
+            let audited = self
+                .send_raw_transaction_for_audit(
+                    &xml,
+                    Some("hello"),
+                    Some(std::any::type_name::<Hello>()),
+                )
+                .await?;
+            (
+                audited.raw_response,
+                audited.request_at,
+                audited.response_at,
+            )
+        };
+
+        #[cfg(not(feature = "transaction-audit"))]
         let response = self.connection.transact(&xml)?.await?;
         debug!("{}: greeting: {}", self.connection.registry, &response);
 
-        xml::deserialize::<Greeting>(&response)
+        let greeting = match xml::deserialize::<Greeting>(&response) {
+            Ok(greeting) => greeting,
+            Err(e) => {
+                #[cfg(feature = "transaction-audit")]
+                self.record_audit_event(AuditRecord {
+                    command: Some("hello"),
+                    command_type: Some(std::any::type_name::<Hello>()),
+                    request_at,
+                    response_at,
+                    raw_request: &xml,
+                    raw_response: Some(&response),
+                    metadata: AuditResponseMetadata::default(),
+                    succeeded: false,
+                    error: Some(e.to_string()),
+                });
+                return Err(e);
+            }
+        };
+
+        #[cfg(feature = "transaction-audit")]
+        self.record_audit_event(AuditRecord {
+            command: Some("hello"),
+            command_type: Some(std::any::type_name::<Hello>()),
+            request_at,
+            response_at,
+            raw_request: &xml,
+            raw_response: Some(&response),
+            metadata: AuditResponseMetadata::default(),
+            succeeded: true,
+            error: None,
+        });
+
+        Ok(greeting)
     }
 
     pub async fn transact<'c, 'e, Cmd, Ext>(
@@ -130,6 +232,23 @@ impl<C: Connector> EppClient<C> {
         let xml = xml::serialize(&document)?;
 
         debug!("{}: request: {}", self.connection.registry, &xml);
+        #[cfg(feature = "transaction-audit")]
+        let (response, request_at, response_at) = {
+            let audited = self
+                .send_raw_transaction_for_audit(
+                    &xml,
+                    Some(Cmd::COMMAND),
+                    Some(std::any::type_name::<Cmd>()),
+                )
+                .await?;
+            (
+                audited.raw_response,
+                audited.request_at,
+                audited.response_at,
+            )
+        };
+
+        #[cfg(not(feature = "transaction-audit"))]
         let response = self.connection.transact(&xml)?.await?;
         debug!("{}: response: {}", self.connection.registry, &response);
 
@@ -137,18 +256,57 @@ impl<C: Connector> EppClient<C> {
             Ok(rsp) => rsp,
             Err(e) => {
                 error!(%response, "failed to deserialize response for transaction: {e}");
+                #[cfg(feature = "transaction-audit")]
+                self.record_audit_event(AuditRecord {
+                    command: Some(Cmd::COMMAND),
+                    command_type: Some(std::any::type_name::<Cmd>()),
+                    request_at,
+                    response_at,
+                    raw_request: &xml,
+                    raw_response: Some(&response),
+                    metadata: audit_metadata_from_raw_response(&response),
+                    succeeded: false,
+                    error: Some(e.to_string()),
+                });
                 return Err(e);
             }
         };
 
         if rsp.result.code.is_success() {
+            #[cfg(feature = "transaction-audit")]
+            self.record_audit_event(AuditRecord {
+                command: Some(Cmd::COMMAND),
+                command_type: Some(std::any::type_name::<Cmd>()),
+                request_at,
+                response_at,
+                raw_request: &xml,
+                raw_response: Some(&response),
+                metadata: audit_metadata_from_response_parts(&rsp.result, &rsp.tr_ids),
+                succeeded: true,
+                error: None,
+            });
             return Ok(rsp);
         }
 
+        #[cfg(feature = "transaction-audit")]
+        let metadata = audit_metadata_from_response_parts(&rsp.result, &rsp.tr_ids);
         let err = crate::error::Error::Command(Box::new(ResponseStatus {
             result: rsp.result,
             tr_ids: rsp.tr_ids,
         }));
+
+        #[cfg(feature = "transaction-audit")]
+        self.record_audit_event(AuditRecord {
+            command: Some(Cmd::COMMAND),
+            command_type: Some(std::any::type_name::<Cmd>()),
+            request_at,
+            response_at,
+            raw_request: &xml,
+            raw_response: Some(&response),
+            metadata,
+            succeeded: false,
+            error: Some(err.to_string()),
+        });
 
         Err(err)
     }
@@ -156,7 +314,99 @@ impl<C: Connector> EppClient<C> {
     /// Accepts raw EPP XML and returns the raw EPP XML response to it.
     /// Not recommended for direct use but sometimes can be useful for debugging
     pub async fn transact_xml(&mut self, xml: &str) -> Result<String, Error> {
-        self.connection.transact(xml)?.await
+        #[cfg(feature = "transaction-audit")]
+        {
+            let audited = self.send_raw_transaction_for_audit(xml, None, None).await?;
+            let metadata = audit_metadata_from_raw_response(&audited.raw_response);
+            let succeeded = metadata.succeeded.unwrap_or(true);
+            let error = (!succeeded).then(|| audit_command_error_message(&metadata));
+
+            self.record_audit_event(AuditRecord {
+                command: None,
+                command_type: None,
+                request_at: audited.request_at,
+                response_at: audited.response_at,
+                raw_request: xml,
+                raw_response: Some(&audited.raw_response),
+                metadata,
+                succeeded,
+                error,
+            });
+
+            Ok(audited.raw_response)
+        }
+
+        #[cfg(not(feature = "transaction-audit"))]
+        {
+            self.connection.transact(xml)?.await
+        }
+    }
+
+    #[cfg(feature = "transaction-audit")]
+    async fn send_raw_transaction_for_audit(
+        &mut self,
+        raw_request: &str,
+        command: Option<&'static str>,
+        command_type: Option<&'static str>,
+    ) -> Result<AuditedRawResponse, Error> {
+        let request_at = Utc::now();
+        let result = match self.connection.transact(raw_request) {
+            Ok(future) => future.await,
+            Err(err) => Err(err),
+        };
+        let response_at = Utc::now();
+
+        match result {
+            Ok(raw_response) => Ok(AuditedRawResponse {
+                raw_response,
+                request_at,
+                response_at,
+            }),
+            Err(err) => {
+                self.record_audit_event(AuditRecord {
+                    command,
+                    command_type,
+                    request_at,
+                    response_at,
+                    raw_request,
+                    raw_response: None,
+                    metadata: AuditResponseMetadata::default(),
+                    succeeded: false,
+                    error: Some(err.to_string()),
+                });
+                Err(err)
+            }
+        }
+    }
+
+    #[cfg(feature = "transaction-audit")]
+    fn record_audit_event(&self, record: AuditRecord<'_>) {
+        let Some(sink) = self.audit_sink.as_ref() else {
+            return;
+        };
+
+        let event = EppTransactionAuditEvent {
+            registry: self.connection.registry.clone(),
+            command: record.command,
+            command_type: record.command_type,
+            client_tr_id: record.metadata.client_tr_id,
+            server_tr_id: record.metadata.server_tr_id,
+            request_at: record.request_at,
+            response_at: record.response_at,
+            response_code: record.metadata.response_code,
+            message: record.metadata.message,
+            succeeded: record.succeeded,
+            raw_request: record.raw_request.to_string(),
+            raw_response: record.raw_response.map(ToOwned::to_owned),
+            error: record.error,
+        };
+
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| sink.record(event))).is_err() {
+            error!(
+                "{}: transaction audit sink panicked",
+                self.connection.registry
+            );
+        }
     }
 
     /// Returns the greeting received on establishment of the connection in raw xml form
@@ -175,6 +425,66 @@ impl<C: Connector> EppClient<C> {
 
     pub async fn shutdown(mut self) -> Result<(), Error> {
         self.connection.shutdown().await
+    }
+}
+
+#[cfg(feature = "transaction-audit")]
+struct AuditedRawResponse {
+    raw_response: String,
+    request_at: DateTime<Utc>,
+    response_at: DateTime<Utc>,
+}
+
+#[cfg(feature = "transaction-audit")]
+struct AuditRecord<'a> {
+    command: Option<&'static str>,
+    command_type: Option<&'static str>,
+    request_at: DateTime<Utc>,
+    response_at: DateTime<Utc>,
+    raw_request: &'a str,
+    raw_response: Option<&'a str>,
+    metadata: AuditResponseMetadata,
+    succeeded: bool,
+    error: Option<String>,
+}
+
+#[cfg(feature = "transaction-audit")]
+#[derive(Default)]
+struct AuditResponseMetadata {
+    client_tr_id: Option<String>,
+    server_tr_id: Option<String>,
+    response_code: Option<u16>,
+    message: Option<String>,
+    succeeded: Option<bool>,
+}
+
+#[cfg(feature = "transaction-audit")]
+fn audit_metadata_from_response_parts(
+    result: &EppResult,
+    tr_ids: &ResponseTRID,
+) -> AuditResponseMetadata {
+    AuditResponseMetadata {
+        client_tr_id: tr_ids.client_tr_id.clone(),
+        server_tr_id: Some(tr_ids.server_tr_id.clone()),
+        response_code: Some(result.code as u16),
+        message: Some(result.message.clone()),
+        succeeded: Some(result.code.is_success()),
+    }
+}
+
+#[cfg(feature = "transaction-audit")]
+fn audit_metadata_from_raw_response(raw_response: &str) -> AuditResponseMetadata {
+    xml::deserialize::<ResponseStatus>(raw_response)
+        .map(|status| audit_metadata_from_response_parts(&status.result, &status.tr_ids))
+        .unwrap_or_default()
+}
+
+#[cfg(feature = "transaction-audit")]
+fn audit_command_error_message(metadata: &AuditResponseMetadata) -> String {
+    match (&metadata.message, metadata.response_code) {
+        (Some(message), _) => format!("command error: {message}"),
+        (None, Some(code)) => format!("command error: response code {code}"),
+        (None, None) => "command error".to_string(),
     }
 }
 
